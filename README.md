@@ -1,0 +1,4 @@
+squaredance
+===========
+
+Simple task coordination
