@@ -2,10 +2,12 @@
 
 Simple task coordination
 
-Inspired by [Context](https://blog.golang.org/context), but with specific error handling
-semantics
-
 [![Build Status](https://travis-ci.org/lytics/squaredance.svg?branch=master)](https://travis-ci.org/lytics/squaredance) [![GoDoc](https://godoc.org/github.com/lytics/squaredance?status.svg)](https://godoc.org/github.com/lytics/squaredance)
+
+Squaredance provides a clean interface for running groups of goroutines together, where any error should end the party.
+
+Inspired by [Context](https://blog.golang.org/context), and [Tomb](https://gopkg.in/tomb.v1), squaredance embraces a single
+way of handling these synchronization tasks. 
 
 ### Simple case
 ```go
@@ -34,6 +36,11 @@ for _, v := range []string{"swing", "your", "partner", "round", "and", "round"} 
 c.Stop()
 c.Wait()
 ```
+
+All children of a `squaredance.Caller` are spawned as a single function call. If any of the functions returns an error,
+the stop channel is closed, and the first error is returned from the `.Wait()` method.
+
+Any of these functions can use the provided `squaredance.Follower` interfaces to listen to the stop channel, or to spawn more goroutines in the same group.
 
 ### Nested peer and return error
 ```go
