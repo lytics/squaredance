@@ -1,7 +1,10 @@
 // Squaredance provides a simple interface for spawning stoppable child tasks
 package squaredance
 
-import "sync"
+import (
+	"fmt"
+	"sync"
+)
 
 // The Caller allows spawning, stopping and waiting on child tasks
 type Caller interface {
@@ -20,6 +23,21 @@ type Follower interface {
 	StopChan() <-chan struct{}
 	// Spawn a new (peer) child task
 	Spawn(func(Follower) error)
+}
+
+func IsPanic(e error) bool {
+	_, ok := e.(*PanicError)
+	return ok
+}
+
+// PanicError is returned on child panic
+type PanicError struct {
+	// Value returned from recover()
+	Panic interface{}
+}
+
+func (p *PanicError) Error() string {
+	return fmt.Sprintf("Panic from child: %v", p.Panic)
 }
 
 // Create a new parent Caller
@@ -45,11 +63,16 @@ func (t *caller) Spawn(sf func(Follower) error) {
 	}
 	t.childwg.Add(1)
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				t.setError(&PanicError{r})
+			}
+			t.childwg.Done()
+		}()
 		err := sf(t)
 		if err != nil {
 			t.setError(err)
 		}
-		t.childwg.Done()
 	}()
 }
 
@@ -86,4 +109,58 @@ func (t *caller) stop() {
 		t.stopped = true
 		close(t.stopchan)
 	}
+}
+
+// Contra is a way to organize multiple structs with a `Start(...)` function
+// which should be started and coordinated as a group
+type Contra interface {
+	Add(d ...Dancer)
+	Start()
+	Stop()
+	Wait() error
+}
+
+type Dancer interface {
+	Start(Follower) error
+}
+
+func NewContra() Contra {
+	return &contra{
+		members: make([]Dancer, 0),
+		caller:  NewCaller(),
+	}
+}
+
+type contra struct {
+	members []Dancer
+	caller  Caller
+	mu      sync.Mutex
+	started bool
+}
+
+func (c *contra) Add(d ...Dancer) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	// Do nothing if the contra is already started
+	if c.started {
+		return
+	}
+	c.members = append(c.members, d...)
+}
+
+func (c *contra) Start() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.started = true
+	for _, d := range c.members {
+		c.caller.Spawn(d.Start)
+	}
+}
+
+func (c *contra) Stop() {
+	c.caller.Stop()
+}
+
+func (c *contra) Wait() error {
+	return c.caller.Wait()
 }
