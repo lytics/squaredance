@@ -39,7 +39,7 @@ type PanicError struct {
 }
 
 func (p *PanicError) Error() string {
-	return fmt.Sprintf("Panic from child: %v", p.Panic)
+	return fmt.Sprintf("Panic from child: %v\n%s", p.Panic, p.Stack)
 }
 
 // Create a new parent Caller
@@ -67,8 +67,11 @@ func (t *caller) Spawn(sf func(Follower) error) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				p := &PanicError{r, make([]byte, 1024)}
-				runtime.Stack(p.Stack, false)
+				p := &PanicError{r, make([]byte, 100000)}
+				wrote := runtime.Stack(p.Stack, false)
+				if wrote < 100000 {
+					p.Stack = p.Stack[:wrote]
+				}
 				t.setError(p)
 			}
 			t.childwg.Done()
