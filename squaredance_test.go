@@ -202,3 +202,79 @@ func TestPanic(t *testing.T) {
 		t.Fatalf("Expected 'GAH', got %v", v.Panic)
 	}
 }
+
+func TestPanicClose(t *testing.T) {
+	l := NewCaller()
+	l.Spawn(func(f Follower) error {
+		<-f.StopChan()
+		return nil
+	})
+
+	l.Spawn(func(f Follower) error {
+		panic("GAH")
+	})
+
+	ec := make(chan error)
+	go func() {
+		ec <- l.Wait()
+	}()
+	var err error
+	select {
+	case err = <-ec:
+	case <-time.After(time.Second):
+		t.Fatal("Timed out waiting for task shutdown")
+	}
+
+	if !IsPanic(err) {
+		t.Fatalf("Expected panic, got: %v", err)
+	}
+
+	v := err.(*PanicError)
+	if v.Panic.(string) != "GAH" {
+		t.Fatalf("Expected 'GAH', got %v", v.Panic)
+	}
+}
+
+type waiter struct{}
+
+func (w *waiter) Start(f Follower) error {
+	<-f.StopChan()
+	return nil
+}
+
+type panicer struct {
+	t *testing.T
+}
+
+func (p *panicer) Start(Follower) error {
+	time.Sleep(2 * time.Second)
+	p.t.Log("Panicing!")
+	panic("GAH")
+}
+
+func TestContraPanic(t *testing.T) {
+	c := NewContra()
+	c.Add(&waiter{})
+	c.Add(&panicer{t})
+
+	ec := make(chan error)
+	go func() {
+		c.Start()
+		ec <- c.Wait()
+	}()
+	var err error
+	select {
+	case err = <-ec:
+	case <-time.After(3 * time.Second):
+		t.Fatal("Timed out waiting for task shutdown")
+	}
+
+	if !IsPanic(err) {
+		t.Fatalf("Expected panic, got: %v", err)
+	}
+
+	v := err.(*PanicError)
+	if v.Panic.(string) != "GAH" {
+		t.Fatalf("Expected 'GAH', got %v", v.Panic)
+	}
+}
