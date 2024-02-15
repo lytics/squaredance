@@ -3,7 +3,7 @@ package squaredance
 
 import (
 	"fmt"
-	"runtime"
+	"runtime/debug"
 	"sync"
 )
 
@@ -35,7 +35,7 @@ func IsPanic(e error) bool {
 type PanicError struct {
 	// Value returned from recover()
 	Panic interface{}
-	Stack []byte
+	Stack string
 }
 
 func (p *PanicError) Error() string {
@@ -67,11 +67,7 @@ func (t *caller) Spawn(sf func(Follower) error) {
 	go func() {
 		defer func() {
 			if r := recover(); r != nil {
-				p := &PanicError{r, make([]byte, 100000)}
-				wrote := runtime.Stack(p.Stack, false)
-				if wrote < 100000 {
-					p.Stack = p.Stack[:wrote]
-				}
+				p := &PanicError{r, string(debug.Stack())}
 				t.setError(p)
 			}
 			t.childwg.Done()
